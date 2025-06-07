@@ -150,10 +150,45 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _onImpactDetected(double magnitude) {
+  void _onImpactDetected(double magnitude) async {
     if (!_monitoring) return;
     setState(() => _monitoring = false);
     _accelSub.cancel();
+
+    // Load profile info
+    final profileBox = Hive.box<Profile>('profileBox');
+    final profile = profileBox.isNotEmpty ? profileBox.getAt(0) : null;
+    final fullName = profile?.fullName ?? 'N/A';
+    final bloodType = profile?.bloodType ?? 'N/A';
+    final medicalConditions = profile?.medicalConditions ?? 'N/A';
+    final vehicleInfo = profile?.vehicleInfo ?? 'N/A';
+
+    // Get location
+    Position? position;
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        permission = await Geolocator.requestPermission();
+      }
+      position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    } catch (_) {
+      position = null;
+    }
+
+    final locationText = position != null
+        ? 'Latitude: ${position.latitude}, Longitude: ${position.longitude}'
+        : 'Localização indisponível';
+
+    final infoText = '''
+Impacto de ${magnitude.toStringAsFixed(1)} m/s². Está tudo bem?
+
+Informações do Perfil:
+- Nome: $fullName
+- Tipo Sanguíneo: $bloodType
+- Condições Médicas: $medicalConditions
+- Veículo: $vehicleInfo
+- Localização: $locationText
+''';
 
     bool responded = false;
     showDialog(
@@ -161,7 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
       barrierDismissible: false,
       builder: (_) => AlertDialog(
         title: const Text('Impacto Detectado'),
-        content: Text('Impacto de $magnitude m/s². Está tudo bem?'),
+        content: Text(infoText),
         actions: [
           TextButton(
             onPressed: () {
@@ -259,16 +294,17 @@ class SosService {
   final List<CameraDescription> cameras;
   SosService({required this.cameras});
 
-Future<Position> _getLocation() async {
-  LocationPermission permission = await Geolocator.checkPermission();
-  if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-    permission = await Geolocator.requestPermission();
+  Future<Position> _getLocation() async {
+    LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-      throw Exception('Permissão de localização negada');
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        throw Exception('Permissão de localização negada');
+      }
     }
+    return await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
   }
-  return await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-}
+
   Future<List<File>> _capturePhotos() async {
     final snaps = <File>[];
     for (var cam in cameras) {
